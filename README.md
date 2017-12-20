@@ -6,6 +6,12 @@ TensorForce: A TensorFlow library for applied reinforcement learning
 [![Build Status](https://travis-ci.org/reinforceio/tensorforce.svg?branch=master)](https://travis-ci.org/reinforceio/tensorforce)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](https://github.com/reinforceio/tensorforce/blob/master/LICENSE)
 
+BlueCoast Project
+------------
+
+BlueCoast is a project dedicated to build a framework for robot social learning.
+Currently, this project is still under development.
+
 Introduction
 ------------
 
