@@ -14,57 +14,58 @@
 # ==============================================================================
 
 """
-OpenAI universe example.
-
-In order to use openai universe, please make sure you have docker installed.
-
-Then use like this:
-
-``python examples/openai_universe.py -a DQNAgent -c examples/configs/dqn_agent.json -n examples/configs/dqn_network.json flashgames.DuskDrive-v0``
-
-This will create a docker session that you can connect to by visiting
-
+OpenAI gym execution.
 """
+
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-from go_vncdriver.go_vncdriver import *
-
 import argparse
+import json
 import logging
 import os
 import time
 
 from tensorforce import TensorForceError
 from tensorforce.agents import Agent
-import json
 from tensorforce.execution import Runner
-from tensorforce.contrib.openai_universe import OpenAIUniverse
+from tensorforce.contrib.openai_gym import OpenAIGym
+
+
+# python examples/openai_gym.py Pong-ram-v0 -a examples/configs/vpg.json -n examples/configs/mlp2_network.json -e 50000 -m 2000
+
+# python examples/openai_gym.py CartPole-v0 -a examples/configs/vpg.json -n examples/configs/mlp2_network.json -e 2000 -m 200
 
 
 def main():
     parser = argparse.ArgumentParser()
 
-    parser.add_argument('gym_id', help="ID of the gym environment")
+    parser.add_argument('gym_id', help="Id of the Gym environment")
     parser.add_argument('-a', '--agent-config', help="Agent configuration file")
     parser.add_argument('-n', '--network-spec', default=None, help="Network specification file")
-    parser.add_argument('-e', '--episodes', type=int, default=50000, help="Number of episodes")
-    parser.add_argument('-t', '--max-timesteps', type=int, default=2000*60, help="Maximum number of timesteps per episode")
-    # parser.add_argument('-m', '--monitor', help="Save results to this directory")
-    # parser.add_argument('-ms', '--monitor-safe', action='store_true', default=False, help="Do not overwrite previous results")
-    # parser.add_argument('-mv', '--monitor-video', type=int, default=0, help="Save video every x steps (0 = disabled)")
-    parser.add_argument('-s', '--save', help="Save agent to this dir")
-    parser.add_argument('-se', '--save-episodes', type=int, default=100, help="Save agent every x episodes")
+    parser.add_argument('-e', '--episodes', type=int, default=None, help="Number of episodes")
+    parser.add_argument('-t', '--timesteps', type=int, default=None, help="Number of timesteps")
+    parser.add_argument('-m', '--max-episode-timesteps', type=int, default=None, help="Maximum number of timesteps per episode")
+    parser.add_argument('-d', '--deterministic', action='store_true', default=False, help="Choose actions deterministically")
     parser.add_argument('-l', '--load', help="Load agent from this dir")
+    parser.add_argument('--monitor', help="Save results to this directory")
+    parser.add_argument('--monitor-safe', action='store_true', default=False, help="Do not overwrite previous results")
+    parser.add_argument('--monitor-video', type=int, default=0, help="Save video every x steps (0 = disabled)")
     parser.add_argument('-D', '--debug', action='store_true', default=False, help="Show debug outputs")
 
     args = parser.parse_args()
 
     logger = logging.getLogger(__name__)
     logger.setLevel(logging.INFO)
-    environment = OpenAIUniverse(args.gym_id)
-    environment.configure(remotes=1)
+
+    environment = OpenAIGym(
+        gym_id=args.gym_id,
+        monitor=args.monitor,
+        monitor_safe=args.monitor_safe,
+        monitor_video=args.monitor_video,
+        visualize=True
+    )
 
     if args.agent_config is not None:
         with open(args.agent_config, 'r') as fp:
@@ -72,7 +73,7 @@ def main():
     else:
         raise TensorForceError("No agent configuration provided.")
 
-    if args.network_spec:
+    if args.network_spec is not None:
         with open(args.network_spec, 'r') as fp:
             network_spec = json.load(fp=fp)
     else:
@@ -87,12 +88,11 @@ def main():
             network_spec=network_spec
         )
     )
-
     if args.load:
         load_dir = os.path.dirname(args.load)
         if not os.path.isdir(load_dir):
             raise OSError("Could not load agent from {}: No such directory.".format(load_dir))
-        agent.load_model(args.load)
+        agent.restore_model(args.load)
 
     if args.debug:
         logger.info("-" * 16)
@@ -105,27 +105,33 @@ def main():
         repeat_actions=1
     )
 
-    report_episodes = args.episodes // 1000
-    if args.debug:
+    if args.debug:  # TODO: Timestep-based reporting
         report_episodes = 1
+    else:
+        report_episodes = 100
+
+    logger.info("Starting {agent} for Environment '{env}'".format(agent=agent, env=environment))
+
     def episode_finished(r):
         if r.episode % report_episodes == 0:
             steps_per_second = r.timestep / (time.time() - r.start_time)
             logger.info("Finished episode {} after {} timesteps. Steps Per Second {}".format(
-                r.episode, r.episode_timestep, steps_per_second
+                r.agent.episode, r.episode_timestep, steps_per_second
             ))
             logger.info("Episode reward: {}".format(r.episode_rewards[-1]))
-            logger.info("Average of last 500 rewards: {}".format(sum(r.episode_rewards[-500:]) / 500))
-            logger.info("Average of last 100 rewards: {}".format(sum(r.episode_rewards[-100:]) / 100))
+            logger.info("Average of last 500 rewards: {}".format(sum(r.episode_rewards[-500:]) / min(500, len(r.episode_rewards))))
+            logger.info("Average of last 100 rewards: {}".format(sum(r.episode_rewards[-100:]) / min(100, len(r.episode_rewards))))
         return True
 
-    logger.info("Starting {agent} for Environment '{env}'".format(agent=agent, env=environment))
-    runner.run(args.episodes, args.max_timesteps, episode_finished=episode_finished)
-    logger.info("Learning finished. Total episodes: {ep}".format(ep=runner.episode))
+    runner.run(
+        timesteps=args.timesteps,
+        episodes=args.episodes,
+        max_episode_timesteps=args.max_episode_timesteps,
+        deterministic=args.deterministic,
+        episode_finished=episode_finished
+    )
 
-    # if args.monitor:
-    #     environment.gym.monitor.close()
-    environment.close()
+    logger.info("Learning finished. Total episodes: {ep}".format(ep=runner.agent.episode))
 
 
 if __name__ == '__main__':

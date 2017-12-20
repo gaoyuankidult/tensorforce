@@ -63,7 +63,7 @@ def main():
         gym_id=args.gym_id,
         monitor=args.monitor,
         monitor_safe=args.monitor_safe,
-        monitor_video=args.monitor_video
+        monitor_video=args.monitor_video,
     )
 
     if args.agent_config is not None:
